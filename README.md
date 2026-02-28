@@ -68,78 +68,115 @@ When connecting Node.js + Express + MongoDB Atlas + Admin CMS later, swap static
 - Animated availability counters
 - Fully responsive layout
 
-## Auto Deploy
+## Manual deployment
 
-This repository includes:
-
-- `.github/workflows/deploy.yml`
-- `deploy/vps-update.sh`
-- `deploy/nginx-akosshop.conf`
-
-The workflow deploys on every push to `main` using SSH key authentication only (no password auth), updates `/opt/akosshop` on the VPS, deploys backend with PM2, builds frontend, publishes static files to `/var/www/akosshop`, and reloads nginx.
-
-### 1) Generate an SSH key pair for GitHub Actions
-
-Run on your local machine:
-
-```bash
-ssh-keygen -t ed25519 -C "akosshop-github-actions" -f ~/.ssh/akosshop_actions
-```
-
-This creates:
-
-- Private key: `~/.ssh/akosshop_actions`
-- Public key: `~/.ssh/akosshop_actions.pub`
-
-### 2) Add the public key to VPS `authorized_keys`
-
-Recommended: use a non-root deploy user with sudo privileges. Root user is supported if you choose it.
-
-On VPS:
-
-```bash
-mkdir -p ~/.ssh
-chmod 700 ~/.ssh
-cat >> ~/.ssh/authorized_keys << 'EOF'
-PASTE_PUBLIC_KEY_CONTENT_HERE
-EOF
-chmod 600 ~/.ssh/authorized_keys
-```
-
-### 3) Add required GitHub repository secrets
-
-In GitHub -> `Settings` -> `Secrets and variables` -> `Actions` -> `Secrets`, add:
-
-- `VPS_HOST` (example: `187.77.191.182`)
-- `VPS_USER` (example: `root` or your deploy user)
-- `VPS_SSH_KEY` (full private key content from `~/.ssh/akosshop_actions`)
-
-The workflow strips CRLF automatically when writing `VPS_SSH_KEY` (`tr -d '\r'`) and enforces `StrictHostKeyChecking` with `ssh-keyscan` generated `known_hosts`.
-
-### 4) Optional GitHub repository variables
-
-In `Settings` -> `Secrets and variables` -> `Actions` -> `Variables`, you can set:
-
-- `VPS_PORT` (default `22`)
-- `BACKEND_DIR` (default auto-detect, prefers `backend/`)
-- `BACKEND_ENTRY` (default auto-detect, prefers `server.js`)
-- `BACKEND_PORT` (default auto-detect, fallback `5000`)
-- `FRONTEND_DIR` (default auto-detect, prefers `dashboard/`)
-- `FRONTEND_BUILD_DIR` (default auto-detect: `dist`, `build`, `out`)
-
-### 5) First deployment notes
-
-- The remote script clones/updates repo at `/opt/akosshop` using HTTPS URL and force-syncs to `origin/main` (`git fetch` + `git reset --hard`).
-- Backend is started/restarted as PM2 process name: `akosshop-backend`.
-- Frontend writes `.env.production` with `VITE_API_BASE_URL=/api`, runs build, and publishes to `/var/www/akosshop`.
-- Nginx config is installed from `deploy/nginx-akosshop.conf` for `akosshop.online` and `www.akosshop.online`.
-
-### 6) Enable HTTPS with certbot (after DNS propagation)
-
-After `A` records for `akosshop.online` and `www.akosshop.online` point to your VPS IP, run on VPS:
+### 1) Install system packages (Ubuntu VPS)
 
 ```bash
 sudo apt update
+sudo apt install -y git nginx curl ca-certificates rsync
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+sudo apt install -y nodejs
+node -v
+npm -v
+```
+
+### 2) Clone project and build
+
+```bash
+sudo rm -rf /opt/akosshop
+sudo git clone https://github.com/allkindofstuff000/AKOS_SHOP1.git /opt/akosshop
+cd /opt/akosshop
+npm ci
+npm run build
+```
+
+### 3A) Static export + Nginx (preferred)
+
+`next.config.mjs` is configured with `output: "export"`, so build output is generated in `out/`.
+
+```bash
+sudo mkdir -p /var/www/akosshop
+sudo rsync -a --delete /opt/akosshop/out/ /var/www/akosshop/
+sudo chown -R www-data:www-data /var/www/akosshop
+```
+
+Create Nginx config:
+
+```bash
+sudo tee /etc/nginx/sites-available/akosshop.online > /dev/null <<'EOF'
+server {
+    listen 80;
+    listen [::]:80;
+    server_name akosshop.online www.akosshop.online;
+
+    root /var/www/akosshop;
+    index index.html;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    location /_next/static/ {
+        access_log off;
+        expires 30d;
+        add_header Cache-Control "public, max-age=2592000, immutable";
+    }
+}
+EOF
+
+sudo ln -sfn /etc/nginx/sites-available/akosshop.online /etc/nginx/sites-enabled/akosshop.online
+sudo rm -f /etc/nginx/sites-enabled/default
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+### 3B) Next.js server via PM2 + Nginx reverse proxy (fallback)
+
+Use this only if static export is not suitable for your app.
+
+```bash
+cd /opt/akosshop
+npm ci
+npm run build
+sudo npm install -g pm2
+pm2 delete akosshop || true
+pm2 start "npm run start -- -H 127.0.0.1 -p 3000" --name akosshop --cwd /opt/akosshop
+pm2 save
+pm2 startup systemd -u root --hp /root
+```
+
+Create Nginx reverse-proxy config:
+
+```bash
+sudo tee /etc/nginx/sites-available/akosshop.online > /dev/null <<'EOF'
+server {
+    listen 80;
+    listen [::]:80;
+    server_name akosshop.online www.akosshop.online;
+
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+}
+EOF
+
+sudo ln -sfn /etc/nginx/sites-available/akosshop.online /etc/nginx/sites-enabled/akosshop.online
+sudo rm -f /etc/nginx/sites-enabled/default
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+### 4) Optional SSL (after DNS points to 187.77.191.182)
+
+```bash
 sudo apt install -y certbot python3-certbot-nginx
 sudo certbot --nginx -d akosshop.online -d www.akosshop.online
 sudo certbot renew --dry-run
