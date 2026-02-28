@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 120" role="img" aria-labelledby="title">
+  <title>Caribbean Express</title>
+  <rect width="340" height="120" rx="24" fill="#0B3F3B"/>
+  <path d="M36 74C58 40 86 32 116 48C95 50 76 59 62 82C58 74 48 70 36 74Z" fill="#34D399"/>
+  <text x="130" y="56" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="700" fill="#E7FFF8">Caribbean</text>
+  <text x="130" y="82" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="700" fill="#34D399">Express</text>
+</svg>

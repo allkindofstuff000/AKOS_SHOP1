@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 120" role="img" aria-labelledby="title">
+  <title>Zelle</title>
+  <rect width="340" height="120" rx="24" fill="#6B2CE2"/>
+  <rect x="38" y="30" width="56" height="56" rx="14" fill="#FFFFFF" fill-opacity="0.2"/>
+  <text x="66" y="68" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="28" font-weight="700" fill="#FFFFFF">Z</text>
+  <text x="124" y="73" font-family="Arial, Helvetica, sans-serif" font-size="34" font-weight="700" fill="#FFFFFF">Zelle</text>
+</svg>
